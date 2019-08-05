@@ -24,6 +24,11 @@ class GAWWN_Dataset(Dataset):
         '''
         args:
             cfg : path to the cfg file.
+        return (get items):
+            texts : (tuple, sized [B])
+            bboxs : (tensor, sized [B,1,4])
+            images : (tensor, sized [B,3,size,size])
+
         '''
         self.cfg = configparser.ConfigParser()
         self.cfg.read(cfg)
@@ -32,11 +37,13 @@ class GAWWN_Dataset(Dataset):
         self.path_img_folder = self.cfg["Dataset"]["PATH_IMG_FOLDER"]
         self.path_text_folder = self.cfg["Dataset"]["PATH_TEXT_FOLDER"]
         self.path_text_txt = self.cfg["Dataset"]["PATH_TEXT_TXT"]
+        self.path_text_npy = self.cfg["Dataset"]["PATH_TEXT_NPY"]
         self.path_bbox_txt = self.cfg["Dataset"]["PATH_BBOX_TXT"]
 
         self.fnames = []
         self.bboxs = []
         self.texts = []
+        self.texts_encoded = torch.from_numpy(np.load(self.path_text_npy))
 
         self.transform = transform
         self.train = train
@@ -60,14 +67,13 @@ class GAWWN_Dataset(Dataset):
             # bbox loading
             splited = line_bbox.strip().split()
             bbox_idx = splited[0]
-            box = [float(splited[1]),float(splited[2]),float(splited[3]),float(splited[4])]
+            box = [float(splited[1]),float(splited[2]),float(splited[1])+float(splited[3]),float(splited[2])+float(splited[4])]
             self.bboxs.append(torch.Tensor(box).view(-1,4))
 
             # text loading
             splited = line_text.strip().split()
             text_idx = splited[0]
             text = line_text.strip().replace(text_idx+' ','')
-
             self.texts.append(text)
 
         print("Initializing succeed!")
@@ -75,7 +81,8 @@ class GAWWN_Dataset(Dataset):
     def __getitem__(self, index):
         img_path = self.fnames[index]
         bbox = self.bboxs[index]
-        text = self.texts[index]
+        texts = self.texts[index]
+        texts_encoded = self.texts_encoded[index]
 
         # loading img
         img = Image.open(os.path.join(self.path_img_folder, img_path))
@@ -92,7 +99,7 @@ class GAWWN_Dataset(Dataset):
             img, boxes = center_crop(img, bbox, (self.figsize,self.figsize))
 
         img = self.transform(img)
-        return text, img, boxes
+        return texts_encoded, img, boxes
 
     def __len__(self):
         return len(self.fnames)
@@ -100,7 +107,7 @@ class GAWWN_Dataset(Dataset):
 def test():
     transform = transforms.Compose([
         transforms.ToTensor(),
-        #transforms.Normalize((0.485,0.456,0.406), (0.229,0.224,0.225))
+        transforms.Normalize((0.485,0.456,0.406), (0.229,0.224,0.225))
     ])
 
     cfg_path = './config/GAWWN_v1.cfg'
@@ -112,7 +119,8 @@ def test():
     for epoch in range(1):
         texts, img, boxes = next(train_iter)
         print(img.shape)
-        print(texts[0])
+        print(texts.shape)
+        
         print(boxes[0][0])
 
         grid = torchvision.utils.make_grid(img, 1)
@@ -123,7 +131,7 @@ def test():
         draw = ImageDraw.Draw(img)
         for i,(box,text) in enumerate(zip(boxes,texts)):
             draw.rectangle(list(box[0]), outline='red',width = 3)
-        img.save('./test/test.jpg')
+        img.save('./test/test_bbox.jpg')
 
 if __name__ == '__main__':
     test()
