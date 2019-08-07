@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 from scipy.io import loadmat
 from tqdm import tqdm
 import configparser
-from transform import resize, random_flip, random_crop, center_crop
+from transform import resize, random_flip, random_crop, center_crop, compute_bbox_grid
 
 
 class GAWWN_Dataset(Dataset):
@@ -118,10 +118,10 @@ def test():
     #print(len(train_loader))
     for epoch in range(1):
         texts, img, boxes = next(train_iter)
-        print(img.shape)
-        print(texts.shape)
-        
-        print(boxes[0][0])
+        print("image shape : ",img.shape)
+        print("texts shape : ",texts.shape)
+        print("boxes shape : ",boxes.shape)
+        print("boxes : ",boxes)
 
         grid = torchvision.utils.make_grid(img, 1)
         if not os.path.exists("./test"):
@@ -132,6 +132,23 @@ def test():
         for i,(box,text) in enumerate(zip(boxes,texts)):
             draw.rectangle(list(box[0]), outline='red',width = 3)
         img.save('./test/test_bbox.jpg')
+
+        #cropping testing
+
+
+        img = Image.open('./test/test.jpg')
+        img, _ = resize(img, boxes, (16,16))
+        img_torch = transforms.ToTensor()(img).unsqueeze(0)
+        img_torch = img_torch.repeat(10,1,1,1)
+        boxes = boxes.repeat(10,1,1)
+        print('img_torch : ',img_torch.shape)
+        print('boxes : ',boxes.shape)
+        grid = compute_bbox_grid(img_torch, boxes, crop_size=16., img_size=128)
+        output = F.grid_sample(img_torch, grid)
+        print('output : ',output.shape)
+        new_img_torch = output[0]
+        plt.imshow(new_img_torch.numpy().transpose(1,2,0))
+        plt.savefig('./test/crop.jpg')
 
 if __name__ == '__main__':
     test()
