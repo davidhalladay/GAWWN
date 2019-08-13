@@ -90,8 +90,8 @@ class GAWWN_Dataset(Dataset):
             img = img.convert('RGB')
 
         if self.train:
-            img, boxes = random_flip(img, bbox)
-            img, boxes = random_crop(img, bbox)
+            #img, boxes = random_flip(img, bbox)
+            #img, boxes = random_crop(img, bbox)
             img, boxes = resize(img, bbox, (self.figsize,self.figsize))
 
         else:
@@ -99,6 +99,9 @@ class GAWWN_Dataset(Dataset):
             img, boxes = center_crop(img, bbox, (self.figsize,self.figsize))
 
         img = self.transform(img)
+        # scale to -1~1
+        img = 2 * img - 1
+
         return texts_encoded, img, boxes
 
     def __len__(self):
@@ -107,12 +110,12 @@ class GAWWN_Dataset(Dataset):
 def test():
     transform = transforms.Compose([
         transforms.ToTensor(),
-        transforms.Normalize((0.485,0.456,0.406), (0.229,0.224,0.225))
+        #transforms.Normalize((0.485,0.456,0.406), (0.229,0.224,0.225))
     ])
 
     cfg_path = './config/GAWWN_v1.cfg'
     train_dataset = GAWWN_Dataset(cfg = cfg_path, train = True, transform = transform)
-    train_loader = DataLoader(train_dataset,batch_size=1,shuffle=True,num_workers=4)
+    train_loader = DataLoader(train_dataset,batch_size=1,shuffle=False,num_workers=4)
     train_iter = iter(train_loader)
     #print(len(train_loader.dataset))
     #print(len(train_loader))

@@ -19,10 +19,16 @@ import pickle
 import GAWWN_model_img_only
 from GAWWN_Dataset import GAWWN_Dataset
 import configparser
+import argparse
+
+parser = argparse.ArgumentParser(description='PyTorch GAWWN Training')
+parser.add_argument('--ckpt', default="N", type=str, help='save img name')
+#parser.add_argument('--resume', '-r', action='store_true', help='resume from checkpoint')
+#parser.add_argument('--ckpt', type=str, default = 'ckpt',help='the name of ckpt (default : ckpt.pth)')
+args = parser.parse_args()
 
 random.seed(312)
 torch.manual_seed(312)
-
 
 def save_checkpoint(checkpoint_path, model, optimizer):
     state = {'state_dict': model.state_dict(),
@@ -37,8 +43,8 @@ def main():
 
     # parameters
     learning_rate = float(cfg["Train"]["LEARNING_RATE"])
-    num_epochs = int(cfg["Train"]["NUM_EPOCHS"])
-    batch_size = int(cfg["Train"]["BATCH_SIZE"])
+    num_epochs = 300
+    batch_size = 32
     input_dim = int(cfg["Train"]["DIM_INPUT"])
 
     # create the save log file
@@ -52,7 +58,7 @@ def main():
 
     transform = transforms.Compose([
         transforms.ToTensor(),
-        transforms.Normalize((0.485,0.456,0.406), (0.229,0.224,0.225))
+        #transforms.Normalize((0.485,0.456,0.406), (0.229,0.224,0.225))
     ])
 
     # load my Dataset
@@ -65,9 +71,9 @@ def main():
 
     # fixed input for model eval
     with torch.no_grad():
-        fixed_inputs = Variable(torch.randn(20,input_dim, 1, 1))
-        fixed_text_feature = Variable(train_dataset.texts_encoded[:20])
-        fixed_bboxs = Variable(torch.stack(train_dataset.bboxs[:20]))
+        fixed_inputs = Variable(torch.randn(9,256, 1, 1))
+        fixed_text_feature = Variable(train_dataset.texts_encoded[:9])
+        fixed_bboxs = Variable(torch.stack(train_dataset.bboxs[:9]))
 
     # models setting
     G_model = GAWWN_model_img_only.Generator(cfg)
@@ -105,7 +111,7 @@ def main():
         D_real_total_acc = 0.0
         D_fake_total_acc = 0.0
 
-        if (epoch) in [11,20]:
+        if (epoch) in [50,100]:
             G_optimizer.param_groups[0]['lr'] /= 2
             D_optimizer.param_groups[0]['lr'] /= 2
 
@@ -122,11 +128,13 @@ def main():
 
             # train the Generator
             G_model.zero_grad()
-            z = torch.randn(batch_size, input_dim, 1, 1)
+            z = torch.randn(batch_size, 256, 1, 1)
             z = Variable(z).to(device)
+
 
             fake_img = G_model(z,texts_feature,boxes)
             outputs = D_model(fake_img,texts_feature,boxes)
+
             G_loss = criterion(outputs, real_labels)
 
             epoch_G_loss += G_loss.item()
@@ -138,7 +146,11 @@ def main():
             # real images , real_labels == 1
 
             D_model.zero_grad()
-            outputs = D_model(imgs,texts_feature,boxes)
+            if epoch < 100:
+                noise = Variable(imgs.data.new(imgs.size()).normal_(0., 0.5))
+                outputs = D_model(imgs,texts_feature,boxes)
+            else:
+                outputs = D_model(imgs,texts_feature,boxes)
             D_real_loss = criterion(outputs, real_labels)
             D_real_acc = np.mean((outputs > 0.5).cpu().data.numpy())
 
@@ -146,9 +158,10 @@ def main():
             # First term of the loss is always zero since fake_labels == 0
             # we don't want to colculate the G gradient
             outputs = D_model(fake_img.detach(),texts_feature,boxes)
+
             D_fake_loss = criterion(outputs, fake_labels)
             D_fake_acc = np.mean((outputs < 0.5).cpu().data.numpy())
-            D_loss = 0.001 * (D_real_loss + D_fake_loss) / 2.
+            D_loss =  (D_real_loss + D_fake_loss) / 2.
 
             D_loss.backward()
             D_optimizer.step()
@@ -157,7 +170,8 @@ def main():
             D_fake_total_acc += D_fake_acc
             epoch_D_loss += D_loss.item()
             print('Eph[%d/%d]| Itr[%d/%d]| Gloss %.4f Dloss %.4f| LR = %.4f| F_acc %.4f R_acc %.4f'
-            %(epoch, num_epochs, idx, len(train_loader), G_loss.item(), D_loss.item(), learning_rate,D_fake_acc,D_real_acc))
+            %(epoch, num_epochs, idx, len(train_loader), epoch_G_loss/(idx+1),
+                epoch_D_loss/(idx+1), learning_rate,D_fake_total_acc/(idx+1),D_real_total_acc/(idx+1)))
 
 
         if (epoch) % 30 == 0:
@@ -174,7 +188,7 @@ def main():
         G_model.eval()
         test_output = G_model(fixed_inputs,fixed_text_feature,fixed_bboxs)
         torchvision.utils.save_image(test_output.cpu().data,
-                                './save_imgs/%03d.jpg' %(epoch+1), nrow=4)
+                                './save_imgs/%s-%03d.jpg' %(args.ckpt,epoch+1), nrow=3)
         # epoch done
         print('-'*88)
     #
